@@ -23,7 +23,11 @@ A comprehensive, interactive setup script for Ubuntu servers with essential deve
 - **lazygit** - Terminal UI for git
 - **lazydocker** - Terminal UI for Docker
 - **Docker CE** - Latest Docker from official repository
-- **Neovim** - Latest stable from PPA
+- **Neovim** - Latest stable (v0.10+) via AppImage with PPA fallback
+- **LuaRocks** - Lua package manager with Lua 5.4
+- **Node.js LTS** - Latest LTS (v20.x) from official NodeSource repository with npm, yarn, pnpm
+- **UV** - Fast Python package manager
+- **GCC & Build Tools** - Compiler and development essentials
 
 ### Additional Tools
 - **btop** - Modern system resource monitor
