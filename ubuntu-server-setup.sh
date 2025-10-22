@@ -115,21 +115,30 @@ check_prerequisites() {
 
     # Check if running as root
     if [ "$EUID" -eq 0 ]; then
-        log_error "Please do not run this script as root. Run as normal user with sudo privileges."
-        exit 1
-    fi
-
-    # Check sudo access
-    if ! sudo -n true 2>/dev/null; then
-        log_info "This script requires sudo privileges. You may be prompted for your password."
-        sudo -v || {
-            log_error "Failed to obtain sudo privileges"
+        log_warn "⚠️  Running as root user detected!"
+        log_warn "This is not recommended for security reasons."
+        log_warn "Docker group setup and shell changes will be skipped."
+        echo ""
+        if ! ask_yn "Continue anyway?" "n"; then
+            log_error "Installation cancelled. Please run as normal user with sudo privileges."
             exit 1
-        }
-    fi
+        fi
+        RUNNING_AS_ROOT=true
+    else
+        RUNNING_AS_ROOT=false
 
-    # Keep sudo alive
-    while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+        # Check sudo access
+        if ! sudo -n true 2>/dev/null; then
+            log_info "This script requires sudo privileges. You may be prompted for your password."
+            sudo -v || {
+                log_error "Failed to obtain sudo privileges"
+                exit 1
+            }
+        fi
+
+        # Keep sudo alive
+        while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+    fi
 
     # Check for required commands
     for cmd in curl wget; do
@@ -344,13 +353,17 @@ install_docker() {
         sudo apt-get update -y
         sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-        # Add user to docker group
-        log_info "Adding user to docker group..."
-        sudo usermod -aG docker "$USER"
-
-        log_success "Docker installed successfully: $(docker --version)"
-        log_warn "You need to log out and log back in for docker group changes to take effect"
-        log_warn "Or run: newgrp docker"
+        # Add user to docker group (skip if running as root)
+        if [ "$RUNNING_AS_ROOT" = false ]; then
+            log_info "Adding user to docker group..."
+            sudo usermod -aG docker "$USER"
+            log_success "Docker installed successfully: $(docker --version)"
+            log_warn "You need to log out and log back in for docker group changes to take effect"
+            log_warn "Or run: newgrp docker"
+        else
+            log_success "Docker installed successfully: $(docker --version)"
+            log_info "Running as root - docker group setup skipped (root has full access)"
+        fi
         return 0
     else
         log_warn "Skipping docker installation"
@@ -587,14 +600,18 @@ EOF
 
     log_success "Zsh configured successfully"
 
-    # Offer to change default shell
-    if [ "$SHELL" != "$(which zsh)" ]; then
-        if ask_yn "Set zsh as default shell?" "y"; then
-            log_info "Changing default shell to zsh..."
-            sudo chsh -s "$(which zsh)" "$USER"
-            log_success "Default shell changed to zsh"
-            log_warn "You need to log out and log back in for shell change to take effect"
+    # Offer to change default shell (skip if running as root)
+    if [ "$RUNNING_AS_ROOT" = false ]; then
+        if [ "$SHELL" != "$(which zsh)" ]; then
+            if ask_yn "Set zsh as default shell?" "y"; then
+                log_info "Changing default shell to zsh..."
+                sudo chsh -s "$(which zsh)" "$USER"
+                log_success "Default shell changed to zsh"
+                log_warn "You need to log out and log back in for shell change to take effect"
+            fi
         fi
+    else
+        log_info "Running as root - shell change skipped (use 'chsh -s /usr/bin/zsh' manually if needed)"
     fi
 }
 
