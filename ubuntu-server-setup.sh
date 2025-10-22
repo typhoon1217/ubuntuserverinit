@@ -394,9 +394,32 @@ install_zoxide() {
 
     if ask_yn "Install zoxide (smart cd command)?" "y"; then
         log_info "Installing zoxide..."
+
+        # Install zoxide
         curl -sS https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
-        log_success "Zoxide installed successfully"
-        return 0
+
+        # Add to PATH temporarily for this session
+        export PATH="$HOME/.local/bin:$PATH"
+
+        # Create symlink to make it globally accessible
+        if [ -f "$HOME/.local/bin/zoxide" ]; then
+            if [ -w /usr/local/bin ] || [ "$EUID" -eq 0 ]; then
+                ln -sf "$HOME/.local/bin/zoxide" /usr/local/bin/zoxide 2>/dev/null || true
+                log_info "Created symlink: /usr/local/bin/zoxide"
+            fi
+        fi
+
+        # Verify installation
+        if command -v zoxide >/dev/null 2>&1 || [ -f "$HOME/.local/bin/zoxide" ]; then
+            log_success "Zoxide installed successfully"
+            if [ -f "$HOME/.local/bin/zoxide" ]; then
+                log_info "Zoxide location: $HOME/.local/bin/zoxide"
+            fi
+            return 0
+        else
+            log_error "Zoxide installation failed"
+            return 1
+        fi
     else
         log_warn "Skipping zoxide installation"
         return 1
@@ -689,6 +712,9 @@ configure_zsh() {
 
     # Create/update .zshrc
     cat > "$HOME/.zshrc" << 'EOF'
+# Path additions (must be BEFORE oh-my-zsh to ensure tools are found)
+export PATH="$HOME/.local/bin:$PATH"
+
 # Path to oh-my-zsh installation
 export ZSH="$HOME/.oh-my-zsh"
 
@@ -709,6 +735,8 @@ source $ZSH/oh-my-zsh.sh
 # Zoxide initialization
 if command -v zoxide >/dev/null 2>&1; then
     eval "$(zoxide init zsh)"
+elif [ -f "$HOME/.local/bin/zoxide" ]; then
+    eval "$($HOME/.local/bin/zoxide init zsh)"
 fi
 
 # Fzf key bindings and completion
@@ -738,25 +766,29 @@ alias vi='nvim'
 alias lg='lazygit'
 alias ld='lazydocker'
 alias cat='batcat 2>/dev/null || cat'
-
-# Path additions
-export PATH="$HOME/.local/bin:$PATH"
 EOF
 
     log_success "Zsh configured successfully"
 
-    # Offer to change default shell (skip if running as root)
-    if [ "$RUNNING_AS_ROOT" = false ]; then
-        if [ "$SHELL" != "$(which zsh)" ]; then
-            if ask_yn "Set zsh as default shell?" "y"; then
-                log_info "Changing default shell to zsh..."
+    # Offer to change default shell
+    if [ "$SHELL" != "$(which zsh)" ]; then
+        if ask_yn "Set zsh as default shell?" "y"; then
+            log_info "Changing default shell to zsh..."
+
+            if [ "$RUNNING_AS_ROOT" = true ]; then
+                # Running as root - change root's shell directly
+                chsh -s "$(which zsh)" root
+                log_success "Default shell changed to zsh for root user"
+                log_warn "Start a new shell session with: exec zsh"
+            else
+                # Running as normal user
                 sudo chsh -s "$(which zsh)" "$USER"
                 log_success "Default shell changed to zsh"
                 log_warn "You need to log out and log back in for shell change to take effect"
             fi
         fi
     else
-        log_info "Running as root - shell change skipped (use 'chsh -s /usr/bin/zsh' manually if needed)"
+        log_info "Zsh is already the default shell"
     fi
 }
 
