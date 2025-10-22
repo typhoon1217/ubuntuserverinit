@@ -567,16 +567,45 @@ install_neovim() {
         fi
     fi
 
-    if ask_yn "Install Neovim (latest stable from PPA)?" "y"; then
-        log_info "Adding Neovim PPA..."
-        sudo add-apt-repository -y ppa:neovim-ppa/stable
-        sudo apt-get update -y
+    if ask_yn "Install Neovim (latest stable v0.10+)?" "y"; then
+        log_info "Installing Neovim via AppImage (latest stable)..."
 
-        log_info "Installing Neovim..."
-        sudo apt-get install -y neovim
+        # Create directory for neovim
+        sudo mkdir -p /opt/nvim
 
-        log_success "Neovim installed: $(nvim --version | head -n1)"
-        return 0
+        # Download latest stable AppImage
+        log_info "Downloading Neovim AppImage..."
+        sudo curl -LO https://github.com/neovim/neovim/releases/download/stable/nvim.appimage -o /opt/nvim/nvim.appimage
+        sudo chmod u+x /opt/nvim/nvim.appimage
+
+        # Extract AppImage (some systems need this)
+        cd /opt/nvim
+        sudo ./nvim.appimage --appimage-extract >/dev/null 2>&1 || true
+        cd - >/dev/null
+
+        # Create symlink - try AppImage first, then extracted version
+        if [ -f /opt/nvim/nvim.appimage ]; then
+            sudo ln -sf /opt/nvim/nvim.appimage /usr/local/bin/nvim
+        elif [ -f /opt/nvim/squashfs-root/usr/bin/nvim ]; then
+            sudo ln -sf /opt/nvim/squashfs-root/usr/bin/nvim /usr/local/bin/nvim
+        fi
+
+        # Verify installation
+        if command_exists nvim; then
+            local version=$(nvim --version | head -n1)
+            log_success "Neovim installed: $version"
+
+            # Check if it's v0.10+
+            if nvim --version | head -n1 | grep -qE "v0\.([1-9][0-9]|10)" ; then
+                log_info "✓ vim.uv API is available (Neovim 0.10+)"
+            else
+                log_warn "Neovim version might be older than 0.10"
+            fi
+            return 0
+        else
+            log_error "Neovim installation failed"
+            return 1
+        fi
     else
         log_warn "Skipping neovim installation"
         return 1
