@@ -211,6 +211,24 @@ check_installation_status() {
         echo -e "  ${RED}✗${NC} uv: not installed" | tee -a "$LOG_FILE"
     fi
 
+    # LuaRocks
+    if command_exists luarocks; then
+        BEFORE_INSTALL[luarocks]="$(luarocks --version 2>/dev/null | head -n1 || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} luarocks: ${BEFORE_INSTALL[luarocks]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[luarocks]="not installed"
+        echo -e "  ${RED}✗${NC} luarocks: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Node.js
+    if command_exists node; then
+        BEFORE_INSTALL[node]="$(node --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} node: ${BEFORE_INSTALL[node]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[node]="not installed"
+        echo -e "  ${RED}✗${NC} node: not installed" | tee -a "$LOG_FILE"
+    fi
+
     # GCC
     if command_exists gcc; then
         BEFORE_INSTALL[gcc]="$(gcc --version 2>/dev/null | head -n1 || echo 'installed')"
@@ -587,42 +605,86 @@ install_neovim() {
     fi
 
     if ask_yn "Install Neovim (latest stable v0.10+)?" "y"; then
-        log_info "Installing Neovim via AppImage (latest stable)..."
+        log_info "Installing Neovim..."
+
+        # Try to get the latest release tag from GitHub API
+        log_info "Fetching latest Neovim release information..."
+        NVIM_VERSION=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+
+        if [ -z "$NVIM_VERSION" ]; then
+            log_warn "Could not fetch latest version, using v0.10.0"
+            NVIM_VERSION="v0.10.0"
+        fi
+
+        log_info "Latest version: $NVIM_VERSION"
 
         # Create directory for neovim
         sudo mkdir -p /opt/nvim
 
-        # Download latest stable AppImage
-        log_info "Downloading Neovim AppImage..."
-        sudo curl -L https://github.com/neovim/neovim/releases/download/stable/nvim.appimage -o /opt/nvim/nvim.appimage
-        sudo chmod u+x /opt/nvim/nvim.appimage
+        # Download with proper versioned URL and fail-check
+        log_info "Downloading Neovim AppImage ($NVIM_VERSION)..."
+        NVIM_URL="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim.appimage"
 
-        # Extract AppImage (some systems need this)
+        if ! sudo curl -fL "$NVIM_URL" -o /opt/nvim/nvim.appimage; then
+            log_error "Failed to download Neovim AppImage from GitHub"
+            log_info "Trying alternative: installing from Ubuntu PPA..."
+
+            # Fallback to PPA installation
+            sudo add-apt-repository -y ppa:neovim-ppa/unstable
+            sudo apt-get update
+            sudo apt-get install -y neovim
+
+            if command_exists nvim; then
+                local version=$(nvim --version 2>/dev/null | head -n1)
+                log_success "Neovim installed from PPA: $version"
+                return 0
+            else
+                log_error "Neovim installation failed"
+                return 1
+            fi
+        fi
+
+        sudo chmod +x /opt/nvim/nvim.appimage
+
+        # Extract AppImage (required for systems without FUSE)
+        log_info "Extracting AppImage..."
         cd /opt/nvim
-        sudo ./nvim.appimage --appimage-extract >/dev/null 2>&1 || true
-        cd - >/dev/null
-
-        # Create symlink - try AppImage first, then extracted version
-        if [ -f /opt/nvim/nvim.appimage ]; then
+        if ! sudo ./nvim.appimage --appimage-extract >/dev/null 2>&1; then
+            log_warn "AppImage extraction failed, trying to use AppImage directly..."
+            cd - >/dev/null
+            sudo rm -f /usr/local/bin/nvim
             sudo ln -sf /opt/nvim/nvim.appimage /usr/local/bin/nvim
-        elif [ -f /opt/nvim/squashfs-root/usr/bin/nvim ]; then
-            sudo ln -sf /opt/nvim/squashfs-root/usr/bin/nvim /usr/local/bin/nvim
+        else
+            cd - >/dev/null
+            sudo rm -f /usr/local/bin/nvim
+
+            # Create symlink - prefer extracted version
+            if [ -f /opt/nvim/squashfs-root/usr/bin/nvim ]; then
+                log_info "Creating symlink from extracted AppImage..."
+                sudo ln -sf /opt/nvim/squashfs-root/usr/bin/nvim /usr/local/bin/nvim
+            else
+                log_warn "Extracted binary not found, using AppImage directly..."
+                sudo ln -sf /opt/nvim/nvim.appimage /usr/local/bin/nvim
+            fi
         fi
 
         # Verify installation
         if command_exists nvim; then
-            local version=$(nvim --version | head -n1)
+            local version=$(nvim --version 2>/dev/null | head -n1)
             log_success "Neovim installed: $version"
 
             # Check if it's v0.10+
-            if nvim --version | head -n1 | grep -qE "v0\.([1-9][0-9]|10)" ; then
+            if nvim --version | head -n1 | grep -qE "v0\.([1-9][0-9]|10|11)" ; then
                 log_info "✓ vim.uv API is available (Neovim 0.10+)"
             else
                 log_warn "Neovim version might be older than 0.10"
             fi
             return 0
         else
-            log_error "Neovim installation failed"
+            log_error "Neovim installation failed - command not found"
+            log_info "Debug: checking what was created..."
+            ls -la /opt/nvim/ 2>&1 | tee -a "$LOG_FILE"
+            ls -la /usr/local/bin/nvim 2>&1 | tee -a "$LOG_FILE"
             return 1
         fi
     else
@@ -673,6 +735,117 @@ install_uv() {
         fi
     else
         log_warn "Skipping UV installation"
+        return 1
+    fi
+}
+
+install_luarocks() {
+    log_header "LuaRocks Installation (Lua Package Manager)"
+
+    if command_exists luarocks; then
+        log_warn "LuaRocks is already installed ($(luarocks --version 2>/dev/null | head -n1 || echo 'installed'))"
+        if ! ask_yn "Reinstall LuaRocks?" "n"; then
+            return 1
+        fi
+    fi
+
+    if ask_yn "Install LuaRocks (Lua package manager)?" "y"; then
+        log_info "Installing LuaRocks..."
+
+        # Install LuaRocks and dependencies
+        sudo apt-get install -y luarocks lua5.4 liblua5.4-dev
+
+        # Verify installation
+        if command_exists luarocks; then
+            local version=$(luarocks --version 2>/dev/null | head -n1)
+            log_success "LuaRocks installed: $version"
+            log_info "Lua version: $(lua -v 2>&1 | head -n1)"
+            return 0
+        else
+            log_error "LuaRocks installation failed"
+            return 1
+        fi
+    else
+        log_warn "Skipping LuaRocks installation"
+        return 1
+    fi
+}
+
+install_nodejs() {
+    log_header "Node.js Installation (Official LTS)"
+
+    if command_exists node; then
+        log_warn "Node.js is already installed ($(node --version 2>/dev/null || echo 'unknown'))"
+        if ! ask_yn "Reinstall Node.js?" "n"; then
+            return 1
+        fi
+    fi
+
+    if ask_yn "Install Node.js LTS from official NodeSource repository?" "y"; then
+        log_info "Installing Node.js LTS..."
+
+        # Remove any existing nodejs packages (quote wildcards for zsh compatibility)
+        sudo apt-get remove -y nodejs npm 2>/dev/null || true
+        sudo apt-get purge -y 'libnode*' 'node-*' nodejs-doc 2>/dev/null || true
+        sudo apt-get autoremove -y 2>/dev/null || true
+
+        # Download and run NodeSource setup script for LTS (Node.js 20.x)
+        log_info "Setting up NodeSource repository for Node.js 20.x LTS..."
+
+        # The setup script may fail if broken PPAs exist, but still configure the repo
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - || log_warn "Setup script reported errors (possibly due to broken PPAs)"
+
+        # Verify NodeSource repository was actually added
+        if ls /etc/apt/sources.list.d/nodesource*.list 1> /dev/null 2>&1; then
+            log_success "NodeSource repository file created"
+        else
+            log_error "NodeSource repository was not added"
+            log_info "Manual fix: Remove broken PPAs with: sudo add-apt-repository --remove ppa:lazygit-team/release"
+            return 1
+        fi
+
+        # Update package lists (suppress errors from broken PPAs)
+        log_info "Updating package lists..."
+        sudo apt-get update 2>&1 | grep -v "does not have a Release file" | grep -v "lazygit-team" || true
+
+        # Install Node.js
+        log_info "Installing Node.js and npm..."
+        if sudo apt-get install -y nodejs; then
+            # Verify we got the right version (should be v20.x or higher)
+            if command_exists node; then
+                local node_version=$(node --version 2>/dev/null)
+                local major_version=$(echo "$node_version" | sed 's/v\([0-9]*\).*/\1/')
+
+                if [ "$major_version" -ge 20 ]; then
+                    local npm_version=$(npm --version 2>/dev/null)
+                    log_success "Node.js installed: $node_version"
+                    log_info "npm version: $npm_version"
+
+                    # Install common global packages
+                    if ask_yn "Install common global npm packages? (yarn, pnpm)" "y"; then
+                        log_info "Installing yarn and pnpm..."
+                        sudo npm install -g yarn pnpm
+                        log_success "Global packages installed"
+                    fi
+
+                    return 0
+                else
+                    log_error "Wrong Node.js version installed: $node_version (expected v20.x+)"
+                    log_warn "Ubuntu's apt repository was used instead of NodeSource"
+                    log_info "This usually happens due to broken PPAs preventing repository setup"
+                    log_info "Fix: sudo add-apt-repository --remove ppa:lazygit-team/release && re-run script"
+                    return 1
+                fi
+            else
+                log_error "Node.js command not found after installation"
+                return 1
+            fi
+        else
+            log_error "Failed to install Node.js package"
+            return 1
+        fi
+    else
+        log_warn "Skipping Node.js installation"
         return 1
     fi
 }
@@ -979,6 +1152,8 @@ main() {
     install_lazydocker && installed_components+=("Lazydocker")
     install_docker && installed_components+=("Docker CE")
     install_neovim && installed_components+=("Neovim")
+    install_luarocks && installed_components+=("LuaRocks")
+    install_nodejs && installed_components+=("Node.js LTS")
     install_uv && installed_components+=("UV")
     install_gcc && installed_components+=("GCC & Build Tools")
 
@@ -996,7 +1171,7 @@ main() {
     log_header "Post-Installation Status Check"
 
     # Check what was installed/upgraded
-    for tool in git zsh oh-my-zsh zoxide lazygit lazydocker docker nvim uv gcc btop tmux fzf ripgrep fd; do
+    for tool in git zsh oh-my-zsh zoxide lazygit lazydocker docker nvim luarocks node uv gcc btop tmux fzf ripgrep fd; do
         local current_status=""
         case $tool in
             git) command_exists git && current_status="$(git --version 2>/dev/null || echo 'installed')" ;;
@@ -1007,6 +1182,8 @@ main() {
             lazydocker) command_exists lazydocker && current_status="installed" ;;
             docker) command_exists docker && current_status="$(docker --version 2>/dev/null || echo 'installed')" ;;
             nvim) command_exists nvim && current_status="$(nvim --version 2>/dev/null | head -n1 || echo 'installed')" ;;
+            luarocks) command_exists luarocks && current_status="$(luarocks --version 2>/dev/null | head -n1 || echo 'installed')" ;;
+            node) command_exists node && current_status="$(node --version 2>/dev/null || echo 'installed')" ;;
             uv) (command_exists uv || [ -f "$HOME/.cargo/bin/uv" ]) && current_status="$(uv --version 2>/dev/null || echo 'installed')" ;;
             gcc) command_exists gcc && current_status="$(gcc --version 2>/dev/null | head -n1 || echo 'installed')" ;;
             btop) command_exists btop && current_status="installed" ;;
