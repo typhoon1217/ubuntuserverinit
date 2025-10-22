@@ -202,6 +202,24 @@ check_installation_status() {
         echo -e "  ${RED}✗${NC} neovim: not installed" | tee -a "$LOG_FILE"
     fi
 
+    # UV
+    if command_exists uv || [ -f "$HOME/.cargo/bin/uv" ]; then
+        BEFORE_INSTALL[uv]="$(uv --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} uv: ${BEFORE_INSTALL[uv]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[uv]="not installed"
+        echo -e "  ${RED}✗${NC} uv: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # GCC
+    if command_exists gcc; then
+        BEFORE_INSTALL[gcc]="$(gcc --version 2>/dev/null | head -n1 || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} gcc: ${BEFORE_INSTALL[gcc]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[gcc]="not installed"
+        echo -e "  ${RED}✗${NC} gcc: not installed" | tee -a "$LOG_FILE"
+    fi
+
     # Btop
     if command_exists btop; then
         BEFORE_INSTALL[btop]="installed"
@@ -565,6 +583,83 @@ install_neovim() {
     fi
 }
 
+install_uv() {
+    log_header "UV Installation (Python Package Manager)"
+
+    if command_exists uv; then
+        log_warn "UV is already installed ($(uv --version 2>/dev/null || echo 'installed'))"
+        if ! ask_yn "Reinstall UV?" "n"; then
+            return 1
+        fi
+    fi
+
+    if ask_yn "Install UV (ultrafast Python package manager)?" "y"; then
+        log_info "Installing UV..."
+
+        # Install UV using the official installer
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+
+        # Add to PATH temporarily for this session
+        export PATH="$HOME/.cargo/bin:$PATH"
+
+        # Create symlink to make it globally accessible
+        if [ -f "$HOME/.cargo/bin/uv" ]; then
+            if [ -w /usr/local/bin ] || [ "$EUID" -eq 0 ]; then
+                ln -sf "$HOME/.cargo/bin/uv" /usr/local/bin/uv 2>/dev/null || true
+                log_info "Created symlink: /usr/local/bin/uv"
+            fi
+        fi
+
+        # Verify installation
+        if command -v uv >/dev/null 2>&1 || [ -f "$HOME/.cargo/bin/uv" ]; then
+            log_success "UV installed successfully"
+            if command -v uv >/dev/null 2>&1; then
+                log_info "UV version: $(uv --version)"
+            else
+                log_info "UV location: $HOME/.cargo/bin/uv"
+            fi
+            return 0
+        else
+            log_error "UV installation failed"
+            return 1
+        fi
+    else
+        log_warn "Skipping UV installation"
+        return 1
+    fi
+}
+
+install_gcc() {
+    log_header "GCC & Build Tools Installation"
+
+    if command_exists gcc; then
+        log_warn "GCC is already installed ($(gcc --version | head -n1))"
+        if ! ask_yn "Reinstall GCC and build tools?" "n"; then
+            return 1
+        fi
+    fi
+
+    if ask_yn "Install GCC and build tools (compiler, make, etc.)?" "y"; then
+        log_info "Installing GCC and build essentials..."
+
+        # Install build-essential package (includes gcc, g++, make)
+        sudo apt-get install -y build-essential
+
+        # Verify installation
+        if command_exists gcc; then
+            log_success "GCC installed successfully: $(gcc --version | head -n1)"
+            log_info "Also installed: g++, make, and other build tools"
+            return 0
+        else
+            log_error "GCC installation failed"
+            return 1
+        fi
+    else
+        log_warn "Skipping GCC installation"
+        return 1
+    fi
+}
+
 install_btop() {
     log_header "Btop Installation"
 
@@ -836,6 +931,8 @@ main() {
     install_lazydocker && installed_components+=("Lazydocker")
     install_docker && installed_components+=("Docker CE")
     install_neovim && installed_components+=("Neovim")
+    install_uv && installed_components+=("UV")
+    install_gcc && installed_components+=("GCC & Build Tools")
 
     # Additional tools
     install_btop && installed_components+=("Btop")
@@ -851,7 +948,7 @@ main() {
     log_header "Post-Installation Status Check"
 
     # Check what was installed/upgraded
-    for tool in git zsh oh-my-zsh zoxide lazygit lazydocker docker nvim btop tmux fzf ripgrep fd; do
+    for tool in git zsh oh-my-zsh zoxide lazygit lazydocker docker nvim uv gcc btop tmux fzf ripgrep fd; do
         local current_status=""
         case $tool in
             git) command_exists git && current_status="$(git --version 2>/dev/null || echo 'installed')" ;;
@@ -862,6 +959,8 @@ main() {
             lazydocker) command_exists lazydocker && current_status="installed" ;;
             docker) command_exists docker && current_status="$(docker --version 2>/dev/null || echo 'installed')" ;;
             nvim) command_exists nvim && current_status="$(nvim --version 2>/dev/null | head -n1 || echo 'installed')" ;;
+            uv) (command_exists uv || [ -f "$HOME/.cargo/bin/uv" ]) && current_status="$(uv --version 2>/dev/null || echo 'installed')" ;;
+            gcc) command_exists gcc && current_status="$(gcc --version 2>/dev/null | head -n1 || echo 'installed')" ;;
             btop) command_exists btop && current_status="installed" ;;
             tmux) command_exists tmux && current_status="$(tmux -V 2>/dev/null || echo 'installed')" ;;
             fzf) command_exists fzf && current_status="$(fzf --version 2>/dev/null || echo 'installed')" ;;
