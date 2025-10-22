@@ -280,7 +280,7 @@ check_prerequisites() {
     if [ "$EUID" -eq 0 ]; then
         log_warn "⚠️  Running as root user detected!"
         log_warn "This is not recommended for security reasons."
-        log_warn "Docker group setup and shell changes will be skipped."
+        log_warn "Docker group setup will be skipped."
         echo ""
         if ! ask_yn "Continue anyway?" "n"; then
             log_error "Installation cancelled. Please run as normal user with sudo privileges."
@@ -455,12 +455,31 @@ install_lazygit() {
     fi
 
     if ask_yn "Install lazygit (terminal UI for git)?" "y"; then
-        log_info "Adding lazygit PPA..."
-        sudo add-apt-repository -y ppa:lazygit-team/release
-        sudo apt-get update -y
+        log_info "Installing lazygit from GitHub releases..."
 
-        log_info "Installing lazygit..."
-        sudo apt-get install -y lazygit
+        # Get latest release version
+        local LAZYGIT_VERSION
+        LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"]*')
+
+        if [ -z "$LAZYGIT_VERSION" ]; then
+            log_warn "Could not fetch latest version, using fallback version 0.43.1"
+            LAZYGIT_VERSION="0.43.1"
+        fi
+
+        log_info "Installing lazygit version $LAZYGIT_VERSION..."
+
+        # Create temp directory
+        local temp_dir
+        temp_dir=$(mktemp -d)
+        cd "$temp_dir"
+
+        # Download and install
+        curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz"
+        tar xf lazygit.tar.gz
+        sudo install lazygit /usr/local/bin
+
+        cd - >/dev/null
+        rm -rf "$temp_dir"
 
         log_success "Lazygit installed: $(lazygit --version)"
         return 0
@@ -575,7 +594,7 @@ install_neovim() {
 
         # Download latest stable AppImage
         log_info "Downloading Neovim AppImage..."
-        sudo curl -LO https://github.com/neovim/neovim/releases/download/stable/nvim.appimage -o /opt/nvim/nvim.appimage
+        sudo curl -L https://github.com/neovim/neovim/releases/download/stable/nvim.appimage -o /opt/nvim/nvim.appimage
         sudo chmod u+x /opt/nvim/nvim.appimage
 
         # Extract AppImage (some systems need this)
@@ -1004,42 +1023,46 @@ main() {
         fi
     done
 
-    # Categorize installations
+    # Categorize installations (initialize arrays first)
+    declare -a newly_installed_items=()
+    declare -a already_installed_items=()
+    declare -a upgraded_items=()
+
     for tool in "${!BEFORE_INSTALL[@]}"; do
         local before="${BEFORE_INSTALL[$tool]}"
         local after="${AFTER_INSTALL[$tool]:-not installed}"
 
         if [ "$before" = "not installed" ] && [ "$after" != "not installed" ]; then
-            newly_installed+=("$tool: $after")
+            newly_installed_items+=("$tool: $after")
         elif [ "$before" != "not installed" ] && [ "$after" != "not installed" ] && [ "$before" != "$after" ]; then
-            upgraded_components+=("$tool: $before → $after")
+            upgraded_items+=("$tool: $before → $after")
         elif [ "$before" != "not installed" ] && [ "$after" != "not installed" ]; then
-            already_installed+=("$tool: $after")
+            already_installed_items+=("$tool: $after")
         fi
     done
 
     # Summary
     log_header "Installation Summary"
 
-    if [ ${#newly_installed[@]} -gt 0 ]; then
+    if [ ${#newly_installed_items[@]} -gt 0 ]; then
         echo -e "${GREEN}Newly Installed:${NC}" | tee -a "$LOG_FILE"
-        for item in "${newly_installed[@]}"; do
+        for item in "${newly_installed_items[@]}"; do
             echo -e "  ${GREEN}✓${NC} $item" | tee -a "$LOG_FILE"
         done
         echo ""
     fi
 
-    if [ ${#upgraded_components[@]} -gt 0 ]; then
+    if [ ${#upgraded_items[@]} -gt 0 ]; then
         echo -e "${YELLOW}Upgraded:${NC}" | tee -a "$LOG_FILE"
-        for item in "${upgraded_components[@]}"; do
+        for item in "${upgraded_items[@]}"; do
             echo -e "  ${YELLOW}↑${NC} $item" | tee -a "$LOG_FILE"
         done
         echo ""
     fi
 
-    if [ ${#already_installed[@]} -gt 0 ]; then
+    if [ ${#already_installed_items[@]} -gt 0 ]; then
         echo -e "${BLUE}Already Installed (unchanged):${NC}" | tee -a "$LOG_FILE"
-        for item in "${already_installed[@]}"; do
+        for item in "${already_installed_items[@]}"; do
             echo -e "  ${BLUE}•${NC} $item" | tee -a "$LOG_FILE"
         done
         echo ""
