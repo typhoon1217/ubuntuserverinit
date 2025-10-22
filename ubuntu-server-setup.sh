@@ -20,6 +20,17 @@
 set -euo pipefail  # Exit on error, undefined variables, and pipe failures
 
 ################################################################################
+# Global Variables
+################################################################################
+
+# Auto-yes mode flag
+AUTO_YES=false
+
+# Arrays to track installation status
+declare -A BEFORE_INSTALL
+declare -A AFTER_INSTALL
+
+################################################################################
 # Color Definitions & Logging Functions
 ################################################################################
 
@@ -77,6 +88,12 @@ ask_yn() {
     local default="${2:-y}"
     local answer
 
+    # If AUTO_YES mode is enabled, automatically return true
+    if [ "$AUTO_YES" = true ]; then
+        echo -e "${CYAN}${prompt} [AUTO-YES]${NC}" | tee -a "$LOG_FILE"
+        return 0
+    fi
+
     if [[ "$default" == "y" ]]; then
         prompt="${prompt} [Y/n]: "
     else
@@ -104,6 +121,134 @@ backup_path() {
         cp -r "$path" "$BACKUP_DIR/$backup_name"
         log_info "Backed up $path to $BACKUP_DIR/$backup_name"
     fi
+}
+
+# Check current installation status
+check_installation_status() {
+    log_header "Pre-Installation Status Check"
+
+    log_info "Checking what is currently installed..."
+    echo ""
+
+    # Git
+    if command_exists git; then
+        BEFORE_INSTALL[git]="$(git --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} git: ${BEFORE_INSTALL[git]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[git]="not installed"
+        echo -e "  ${RED}✗${NC} git: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Zsh
+    if command_exists zsh; then
+        BEFORE_INSTALL[zsh]="$(zsh --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} zsh: ${BEFORE_INSTALL[zsh]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[zsh]="not installed"
+        echo -e "  ${RED}✗${NC} zsh: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Oh-my-zsh
+    if [ -d "$HOME/.oh-my-zsh" ]; then
+        BEFORE_INSTALL[oh-my-zsh]="installed"
+        echo -e "  ${GREEN}✓${NC} oh-my-zsh: installed" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[oh-my-zsh]="not installed"
+        echo -e "  ${RED}✗${NC} oh-my-zsh: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Zoxide
+    if command_exists zoxide; then
+        BEFORE_INSTALL[zoxide]="$(zoxide --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} zoxide: ${BEFORE_INSTALL[zoxide]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[zoxide]="not installed"
+        echo -e "  ${RED}✗${NC} zoxide: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Lazygit
+    if command_exists lazygit; then
+        BEFORE_INSTALL[lazygit]="$(lazygit --version 2>/dev/null | head -n1 || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} lazygit: ${BEFORE_INSTALL[lazygit]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[lazygit]="not installed"
+        echo -e "  ${RED}✗${NC} lazygit: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Lazydocker
+    if command_exists lazydocker; then
+        BEFORE_INSTALL[lazydocker]="installed"
+        echo -e "  ${GREEN}✓${NC} lazydocker: installed" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[lazydocker]="not installed"
+        echo -e "  ${RED}✗${NC} lazydocker: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Docker
+    if command_exists docker; then
+        BEFORE_INSTALL[docker]="$(docker --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} docker: ${BEFORE_INSTALL[docker]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[docker]="not installed"
+        echo -e "  ${RED}✗${NC} docker: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Neovim
+    if command_exists nvim; then
+        BEFORE_INSTALL[nvim]="$(nvim --version 2>/dev/null | head -n1 || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} neovim: ${BEFORE_INSTALL[nvim]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[nvim]="not installed"
+        echo -e "  ${RED}✗${NC} neovim: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Btop
+    if command_exists btop; then
+        BEFORE_INSTALL[btop]="installed"
+        echo -e "  ${GREEN}✓${NC} btop: installed" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[btop]="not installed"
+        echo -e "  ${RED}✗${NC} btop: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Tmux
+    if command_exists tmux; then
+        BEFORE_INSTALL[tmux]="$(tmux -V 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} tmux: ${BEFORE_INSTALL[tmux]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[tmux]="not installed"
+        echo -e "  ${RED}✗${NC} tmux: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Fzf
+    if command_exists fzf; then
+        BEFORE_INSTALL[fzf]="$(fzf --version 2>/dev/null || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} fzf: ${BEFORE_INSTALL[fzf]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[fzf]="not installed"
+        echo -e "  ${RED}✗${NC} fzf: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Ripgrep
+    if command_exists rg; then
+        BEFORE_INSTALL[ripgrep]="$(rg --version 2>/dev/null | head -n1 || echo 'installed')"
+        echo -e "  ${GREEN}✓${NC} ripgrep: ${BEFORE_INSTALL[ripgrep]}" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[ripgrep]="not installed"
+        echo -e "  ${RED}✗${NC} ripgrep: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    # Fd
+    if command_exists fd || command_exists fdfind; then
+        BEFORE_INSTALL[fd]="installed"
+        echo -e "  ${GREEN}✓${NC} fd: installed" | tee -a "$LOG_FILE"
+    else
+        BEFORE_INSTALL[fd]="not installed"
+        echo -e "  ${RED}✗${NC} fd: not installed" | tee -a "$LOG_FILE"
+    fi
+
+    echo ""
+    log_info "Status check complete"
 }
 
 ################################################################################
@@ -624,9 +769,15 @@ main() {
     log_header "Ubuntu Server Initial Setup Script"
 
     log_info "This script will help you set up your Ubuntu server with development tools"
+    if [ "$AUTO_YES" = true ]; then
+        log_info "Running in AUTO-YES mode - all prompts will be automatically accepted"
+    fi
     log_info "Log file: $LOG_FILE"
     log_info "Backup directory: $BACKUP_DIR"
     echo ""
+
+    # Check current installation status
+    check_installation_status
 
     if ! ask_yn "Continue with installation?" "y"; then
         log_warn "Installation cancelled by user"
@@ -635,6 +786,9 @@ main() {
 
     # Track installations
     declare -a installed_components
+    declare -a already_installed
+    declare -a newly_installed
+    declare -a upgraded_components
 
     # Prerequisites
     check_prerequisites
@@ -661,13 +815,80 @@ main() {
     configure_neovim && installed_components+=("Neovim Config")
     configure_zsh && installed_components+=("Zsh Config")
 
+    # Post-installation status check
+    log_header "Post-Installation Status Check"
+
+    # Check what was installed/upgraded
+    for tool in git zsh oh-my-zsh zoxide lazygit lazydocker docker nvim btop tmux fzf ripgrep fd; do
+        local current_status=""
+        case $tool in
+            git) command_exists git && current_status="$(git --version 2>/dev/null || echo 'installed')" ;;
+            zsh) command_exists zsh && current_status="$(zsh --version 2>/dev/null || echo 'installed')" ;;
+            oh-my-zsh) [ -d "$HOME/.oh-my-zsh" ] && current_status="installed" ;;
+            zoxide) command_exists zoxide && current_status="$(zoxide --version 2>/dev/null || echo 'installed')" ;;
+            lazygit) command_exists lazygit && current_status="$(lazygit --version 2>/dev/null | head -n1 || echo 'installed')" ;;
+            lazydocker) command_exists lazydocker && current_status="installed" ;;
+            docker) command_exists docker && current_status="$(docker --version 2>/dev/null || echo 'installed')" ;;
+            nvim) command_exists nvim && current_status="$(nvim --version 2>/dev/null | head -n1 || echo 'installed')" ;;
+            btop) command_exists btop && current_status="installed" ;;
+            tmux) command_exists tmux && current_status="$(tmux -V 2>/dev/null || echo 'installed')" ;;
+            fzf) command_exists fzf && current_status="$(fzf --version 2>/dev/null || echo 'installed')" ;;
+            ripgrep) command_exists rg && current_status="$(rg --version 2>/dev/null | head -n1 || echo 'installed')" ;;
+            fd) (command_exists fd || command_exists fdfind) && current_status="installed" ;;
+        esac
+
+        if [ -n "$current_status" ]; then
+            AFTER_INSTALL[$tool]="$current_status"
+        else
+            AFTER_INSTALL[$tool]="not installed"
+        fi
+    done
+
+    # Categorize installations
+    for tool in "${!BEFORE_INSTALL[@]}"; do
+        local before="${BEFORE_INSTALL[$tool]}"
+        local after="${AFTER_INSTALL[$tool]:-not installed}"
+
+        if [ "$before" = "not installed" ] && [ "$after" != "not installed" ]; then
+            newly_installed+=("$tool: $after")
+        elif [ "$before" != "not installed" ] && [ "$after" != "not installed" ] && [ "$before" != "$after" ]; then
+            upgraded_components+=("$tool: $before → $after")
+        elif [ "$before" != "not installed" ] && [ "$after" != "not installed" ]; then
+            already_installed+=("$tool: $after")
+        fi
+    done
+
     # Summary
     log_header "Installation Summary"
 
+    if [ ${#newly_installed[@]} -gt 0 ]; then
+        echo -e "${GREEN}Newly Installed:${NC}" | tee -a "$LOG_FILE"
+        for item in "${newly_installed[@]}"; do
+            echo -e "  ${GREEN}✓${NC} $item" | tee -a "$LOG_FILE"
+        done
+        echo ""
+    fi
+
+    if [ ${#upgraded_components[@]} -gt 0 ]; then
+        echo -e "${YELLOW}Upgraded:${NC}" | tee -a "$LOG_FILE"
+        for item in "${upgraded_components[@]}"; do
+            echo -e "  ${YELLOW}↑${NC} $item" | tee -a "$LOG_FILE"
+        done
+        echo ""
+    fi
+
+    if [ ${#already_installed[@]} -gt 0 ]; then
+        echo -e "${BLUE}Already Installed (unchanged):${NC}" | tee -a "$LOG_FILE"
+        for item in "${already_installed[@]}"; do
+            echo -e "  ${BLUE}•${NC} $item" | tee -a "$LOG_FILE"
+        done
+        echo ""
+    fi
+
     if [ ${#installed_components[@]} -eq 0 ]; then
-        log_warn "No components were installed"
+        log_warn "No new components were installed or configured"
     else
-        log_success "Successfully installed/configured:"
+        log_success "Actions performed during this run:"
         for component in "${installed_components[@]}"; do
             echo -e "  ${GREEN}✓${NC} $component" | tee -a "$LOG_FILE"
         done
@@ -692,5 +913,53 @@ main() {
 # Error handler
 trap 'log_error "Script failed at line $LINENO. Check $LOG_FILE for details."' ERR
 
+# Parse command-line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -y|--yes)
+                AUTO_YES=true
+                shift
+                ;;
+            -h|--help)
+                cat << EOF
+Ubuntu Server Initial Setup Script
+
+Usage: $0 [OPTIONS]
+
+OPTIONS:
+    -y, --yes       Auto-answer yes to all prompts (non-interactive mode)
+    -h, --help      Display this help message
+
+EXAMPLES:
+    $0              # Interactive mode with prompts
+    $0 -y           # Non-interactive mode, auto-yes to everything
+    sudo bash $0 -y # Run with sudo in auto-yes mode
+
+FEATURES:
+    - Pre-installation status check
+    - Interactive Y/N prompts for each component (or auto-yes with -y)
+    - Installs: git, zsh, docker, neovim, lazygit, lazydocker, and more
+    - Automatic backups before configuration changes
+    - Detailed before/after installation summary
+    - Comprehensive logging
+
+For more information, see README.md
+
+EOF
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                echo "Use -h or --help for usage information"
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Parse arguments first
+parse_args "$@"
+
 # Run main function
-main "$@"
+main

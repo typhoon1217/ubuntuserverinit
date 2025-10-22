@@ -4,13 +4,15 @@ A comprehensive, interactive setup script for Ubuntu servers with essential deve
 
 ## Features
 
-✨ **Interactive Installation** - Y/N prompts for each component
+✨ **Interactive Installation** - Y/N prompts for each component OR auto-yes mode with `-y` flag
+🔍 **Before/After Status** - Shows what's already installed vs newly installed
 🎨 **Colorized Output** - Clear, readable feedback with severity levels
 🔒 **Robust Error Handling** - Strict error checking with detailed logging
 💾 **Automatic Backups** - Saves existing configurations before modification
 📊 **Comprehensive Logging** - Full logs saved with timestamps
 🐳 **Docker User Setup** - Automatic user group configuration
 🐚 **Smart Shell Config** - Zsh with prefix-based history search
+⚡ **Non-Interactive Mode** - Use `-y` flag for fully automated installation
 
 ## What Gets Installed
 
@@ -32,45 +34,99 @@ A comprehensive, interactive setup script for Ubuntu servers with essential deve
 
 ## Usage
 
-### Basic Usage
+### Interactive Mode (Default)
 
 ```bash
 ./ubuntu-server-setup.sh
 ```
 
 The script will:
-1. Check prerequisites (sudo access, internet connection)
-2. Present Y/N prompts for each component
-3. Install selected components with progress feedback
-4. Configure post-installation settings
-5. Display summary report with next steps
+1. Show pre-installation status (what's already installed)
+2. Check prerequisites (sudo access, internet connection)
+3. Present Y/N prompts for each component
+4. Install selected components with progress feedback
+5. Configure post-installation settings
+6. Display detailed before/after summary with newly installed, upgraded, and unchanged components
+
+### Non-Interactive Mode (Auto-Yes)
+
+```bash
+./ubuntu-server-setup.sh -y
+# or
+./ubuntu-server-setup.sh --yes
+```
+
+Perfect for automated deployments or when you want to install everything without prompts. All Y/N prompts automatically answer "yes".
+
+### Display Help
+
+```bash
+./ubuntu-server-setup.sh --help
+```
 
 ### What to Expect
 
+#### Interactive Mode Output
+
 ```
 ========================================
-Ubuntu Server Initial Setup Script
+Pre-Installation Status Check
 ========================================
 
-[INFO] This script will help you set up your Ubuntu server
-[INFO] Log file: ~/ubuntu-setup-20250122-143022.log
+[INFO] Checking what is currently installed...
+
+  ✓ git: git version 2.43.0
+  ✗ zsh: not installed
+  ✗ lazygit: not installed
+  ✓ docker: Docker version 24.0.7
+  ...
+
+[INFO] Status check complete
 
 Continue with installation? [Y/n]: y
 
 ========================================
-System Updates
-========================================
-Update system packages? [Y/n]: y
-[INFO] Updating package lists...
-[SUCCESS] System updated successfully
-
-========================================
 Git Installation
 ========================================
-Install/upgrade git? [Y/n]: y
-[SUCCESS] Git installed: git version 2.43.0
+[WARN] Git is already installed (git version 2.43.0)
+Reinstall/upgrade git? [y/N]: n
 
 ...
+
+========================================
+Installation Summary
+========================================
+
+Newly Installed:
+  ✓ zsh: zsh 5.9
+  ✓ lazygit: version=0.40.2
+  ✓ neovim: NVIM v0.9.5
+
+Upgraded:
+  ↑ docker: Docker version 24.0.7 → Docker version 25.0.0
+
+Already Installed (unchanged):
+  • git: git version 2.43.0
+  • tmux: tmux 3.3a
+
+Actions performed during this run:
+  ✓ System Updates
+  ✓ Zsh + Oh-My-Zsh
+  ✓ Lazygit
+  ✓ Docker CE
+  ✓ Neovim
+  ✓ Zsh Config
+```
+
+#### Auto-Yes Mode Output
+
+```bash
+./ubuntu-server-setup.sh -y
+
+# All prompts show [AUTO-YES]:
+Continue with installation? [AUTO-YES]
+Install/upgrade git? [AUTO-YES]
+# ... everything installs automatically
 ```
 
 ## Post-Installation
